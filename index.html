@@ -12,8 +12,12 @@
 <body>
 
 <header>
-  <div class="logo">World Cup <span>2026</span></div>
-  <div class="stat-pill">📅 All match times are shown in the local time zone of the host venue.</div>
+  <div class="header-left">
+    <button class="hamburger" id="hamburger-btn" aria-label="Open team menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="logo">World Cup <span>2026</span></div>
+  </div>
   <div class="header-stats">
     <div class="stat-pill"><span class="live-dot"></span> <b id="hd-live">0</b> live</div>
     <div class="stat-pill">📅 <b id="hd-upcoming">—</b> upcoming</div>
@@ -22,10 +26,16 @@
   </div>
 </header>
 
+<!-- Overlay behind sidebar on mobile -->
+<div class="sidebar-overlay" id="sidebar-overlay"></div>
+
 <div class="layout">
 
-  <aside>
-    <div class="sidebar-title">⭐ My Teams</div>
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-title">⭐ My Teams</div>
+      <button class="sidebar-close" id="sidebar-close" aria-label="Close">×</button>
+    </div>
     <div class="fav-count" id="fav-count-label">Select teams to filter your schedule</div>
     <div class="sidebar-actions">
       <button class="btn-sm" id="btn-clear">Clear all</button>
@@ -77,8 +87,7 @@
       </div>
       <button class="modal-close" id="close-modal">×</button>
     </div>
-    <div class="modal-team-rows" id="modal-teams-container">
-      </div>
+    <div class="modal-team-rows" id="modal-teams-container"></div>
   </div>
 </div>
 

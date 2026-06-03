@@ -1,11 +1,4 @@
 // ─── PLACEHOLDER → REAL TEAM MAPPING ────────────────────────────────────────
-// Playoff results confirmed March 31 2026:
-// UEFA Path A = Bosnia & Herzegovina  (beat Italy on pens)
-// UEFA Path B = Sweden                (beat Poland)
-// UEFA Path C = Türkiye               (beat Kosovo)
-// UEFA Path D = Czechia               (already confirmed earlier)
-// IC Path 1   = DR Congo              (beat Jamaica)
-// IC Path 2   = Iraq                  (beat Bolivia)
 const PLACEHOLDER_MAP = {
   "UEFA Path A winner": "Bosnia & Herz.",
   "UEFA Path B winner": "Sweden",
@@ -32,9 +25,58 @@ const FLAGS = {
   "France":"🇫🇷","Senegal":"🇸🇳","Iraq":"🇮🇶","Norway":"🇳🇴",
   "Argentina":"🇦🇷","Algeria":"🇩🇿","Austria":"🇦🇹","Jordan":"🇯🇴",
   "Portugal":"🇵🇹","Uzbekistan":"🇺🇿","Colombia":"🇨🇴","DR Congo":"🇨🇩",
-  "England":"🏴󠁧󠁢󠁥󠁮󠁧󠁿","Croatia":"🇭🇷","Ghana":"🇬🇭","Panama":"🇵🇦"
+  "England":"🏴󠁧󠁢󠁥󠁮󠁧󠁿","Croatia":"🇭🇷","Ghana":"🇬🇭","Panama":"🇵🇦",
+  "Czech Republic":"🇨🇿"
 };
 function flag(n) { return FLAGS[n] || "🏳"; }
+
+// ─── TIME CONVERSION ─────────────────────────────────────────────────────────
+// Parses "13:00 UTC-6" on date "2026-06-11" → converts to Stockholm (Europe/Stockholm)
+// Returns { time: "22:00", date: "2026-06-12" } (date may shift if crossing midnight)
+function toStockholm(dateStr, timeStr) {
+  if (!dateStr || !timeStr) return { time: timeStr || '', date: dateStr || '' };
+
+  try {
+    // Parse "13:00 UTC-6" → hours=13, mins=0, offsetHours=-6
+    const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*UTC([+-]\d+(?:\.\d+)?)?$/i);
+    if (!match) return { time: timeStr, date: dateStr };
+
+    const localH   = parseInt(match[1], 10);
+    const localM   = parseInt(match[2], 10);
+    const offset   = match[3] !== undefined ? parseFloat(match[3]) : 0; // e.g. -6
+
+    // Convert to UTC: subtract the offset
+    // e.g. 13:00 UTC-6  →  13 - (-6) = 19:00 UTC
+    const totalUTCMinutes = localH * 60 + localM - offset * 60;
+
+    // Build a UTC Date object from the match date + UTC time
+    // We treat dateStr as the LOCAL date at that venue, but since we've derived
+    // the UTC minute-of-day we can construct it directly.
+    const [year, month, day] = dateStr.split('-').map(Number);
+
+    // Start from midnight UTC of the match date, add UTC minutes
+    const utcMs = Date.UTC(year, month - 1, day) + totalUTCMinutes * 60000;
+    const utcDate = new Date(utcMs);
+
+    // Format in Stockholm timezone
+    const sweTime = utcDate.toLocaleTimeString('sv-SE', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Europe/Stockholm'
+    });
+
+    const sweDate = utcDate.toLocaleDateString('sv-SE', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      timeZone: 'Europe/Stockholm'
+    }); // returns "2026-06-12" format
+
+    return { time: sweTime, date: sweDate };
+  } catch (e) {
+    return { time: timeStr, date: dateStr };
+  }
+}
 
 // ─── COOKIES ─────────────────────────────────────────────────────────────────
 function setCookie(n, v, d) {
@@ -60,8 +102,8 @@ let favTeams = loadFavs();
 let currentView = 'all';
 let filterRound = '';
 let searchText = '';
-let allMatches = [];     // fetched + placeholder-resolved
-let teamsGroups = {};    // team -> group
+let allMatches = [];   // fetched + placeholder-resolved + time-converted
+let teamsGroups = {};  // team -> group
 
 // ─── FETCH FROM openfootball ─────────────────────────────────────────────────
 const API_URL = 'https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json';
@@ -80,12 +122,23 @@ async function fetchMatches() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
 
-    // Resolve placeholders and build match list
-    allMatches = data.matches.map(m => ({
-      ...m,
-      team1: resolveName(m.team1),
-      team2: resolveName(m.team2)
-    }));
+    allMatches = data.matches.map(m => {
+      const team1 = resolveName(m.team1);
+      const team2 = resolveName(m.team2);
+
+      // Convert time + date to Stockholm
+      const swe = toStockholm(m.date, m.time);
+
+      return {
+        ...m,
+        team1,
+        team2,
+        // Override date and time with Stockholm equivalents
+        date: swe.date,       // may be a day later than venue local date
+        time: swe.time,       // "HH:MM" in Stockholm time
+        timeRaw: m.time       // keep original for debugging if needed
+      };
+    });
 
     // Build team→group map
     teamsGroups = {};
@@ -102,7 +155,6 @@ async function fetchMatches() {
     renderSidebar();
   } catch(err) {
     setApiStatus('err', 'Fetch failed — showing cached data');
-    // Fall back to embedded seed data
     allMatches = SEED_MATCHES;
     teamsGroups = {};
     allMatches.forEach(m => {
@@ -119,29 +171,35 @@ function isPlaceholder(name) {
 }
 
 // ─── STATUS HELPERS ───────────────────────────────────────────────────────────
+// m.date is now in Stockholm timezone, so compare against Stockholm "today"
+function getStockholmToday() {
+  const d = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' });
+  return d; // "2026-06-14"
+}
+
 function getStatus(m) {
-  const today = new Date(); today.setHours(0,0,0,0);
-  const mDay  = new Date(m.date + 'T00:00:00Z');
-  // If openfootball has scores
+  const today = getStockholmToday();
   if (m.score1 != null) return 'ft';
-  if (mDay < today)     return 'ft';
-  if (mDay.getTime() === today.getTime()) return 'today';
-  // within 3 hours upcoming
+  if (m.date < today)   return 'ft';
+  if (m.date === today) return 'today';
   return 'upcoming';
 }
 
 function fmtDate(d) {
-  return new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', {
-    weekday:'short', day:'numeric', month:'short', timeZone:'UTC'
+  // d is already a Stockholm-adjusted date string "YYYY-MM-DD"
+  const [year, month, day] = d.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('en-GB', {
+    weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC'
   });
 }
 
 function isFav(m) { return favTeams.has(m.team1) || favTeams.has(m.team2); }
-function isKO(r)  { return ['Round of 32','Round of 16','Quarter-final','Semi-final','Match for third place','Final'].includes(r); }
+function isKO(r)  {
+  return ['Round of 32','Round of 16','Quarter-final','Semi-final','Match for third place','Final'].includes(r);
+}
 
 // ─── SIDEBAR ─────────────────────────────────────────────────────────────────
 function renderSidebar() {
-  // Group teams by group
   const byGroup = {};
   Object.entries(teamsGroups).forEach(([team, grp]) => {
     if (!byGroup[grp]) byGroup[grp] = [];
@@ -173,14 +231,13 @@ function renderSidebar() {
 // ─── MAIN RENDER ──────────────────────────────────────────────────────────────
 function render() {
   if (!allMatches.length) return;
-  const today = new Date(); today.setHours(0,0,0,0);
+  const today = getStockholmToday();
 
-  // Header stats
   let live=0, upcoming=0, played=0;
   allMatches.forEach(m => {
     const s = getStatus(m);
     if (s==='ft') played++;
-    else if (s==='today'||s==='upcoming') upcoming++;
+    else upcoming++;
   });
   document.getElementById('hd-live').textContent = live;
   document.getElementById('hd-upcoming').textContent = upcoming;
@@ -188,7 +245,6 @@ function render() {
 
   let matches = [...allMatches];
 
-  // View filter
   if (currentView === 'favs') {
     if (favTeams.size === 0) {
       document.getElementById('matches-output').innerHTML = `
@@ -201,13 +257,11 @@ function render() {
     matches = matches.filter(isFav);
   }
 
-  // Round filter
   if (filterRound) {
     if (filterRound === 'group') matches = matches.filter(m => !!m.group);
     else matches = matches.filter(m => m.round === filterRound);
   }
 
-  // Search
   if (searchText) {
     const q = searchText.toLowerCase();
     matches = matches.filter(m =>
@@ -257,12 +311,13 @@ function render() {
 }
 
 function matchCard(m) {
-  const st = getStatus(m);
+  const st  = getStatus(m);
   const fav = isFav(m);
   const ko  = isKO(m.round);
-  const t   = (m.time||'').split(' ')[0];
 
-  // Score
+  // m.time is already "HH:MM" in Stockholm time
+  const t = m.time || '';
+
   let scoreHtml;
   if (m.score1 != null) {
     scoreHtml = `<div class="score-block">
@@ -276,7 +331,6 @@ function matchCard(m) {
       <span class="score-num">-</span></div>`;
   }
 
-  // Status badge
   const badges = {
     live:    '<span class="status-badge live">● Live</span>',
     ft:      '<span class="status-badge ft">FT</span>',
@@ -306,13 +360,11 @@ function matchCard(m) {
     </div>
     <div class="match-footer">
       <span class="venue-info">📍 ${m.ground||'—'}</span>
-      <span class="match-time">${t}</span>
+      <span class="match-time">${t ? t + ' CEST' : ''}</span>
       ${badges[st]||''}
     </div>
   </div>`;
 }
-
-
 
 // ─── EVENTS ──────────────────────────────────────────────────────────────────
 document.getElementById('team-list').addEventListener('click', e => {
@@ -357,32 +409,33 @@ document.getElementById('refresh-btn').addEventListener('click', fetchMatches);
 
 document.getElementById('sidebar-team-search').addEventListener('input', e => {
   const term = e.target.value.toLowerCase();
-  
-  // Filter teams
+
   document.querySelectorAll('.team-btn').forEach(btn => {
     const match = btn.dataset.team.toLowerCase().includes(term);
     btn.style.display = match ? 'flex' : 'none';
   });
-  
-  // Hide empty group labels if no teams match in that group
+
+  // Hide both the label AND its grid together so no gap appears
   document.querySelectorAll('.group-label').forEach(label => {
     const grid = label.nextElementSibling;
-    const hasVisible = Array.from(grid.children).some(b => b.style.display !== 'none');
-    label.style.display = hasVisible ? 'block' : 'none';
+    const hasVisible = grid && Array.from(grid.children).some(b => b.style.display !== 'none');
+    label.style.display = hasVisible ? '' : 'none';
+    if (grid) grid.style.display = hasVisible ? '' : 'none';
   });
+
+  // Scroll the team list back to top so results always start at the top
+  document.getElementById('team-list').scrollTop = 0;
 });
 
-// Modal Logic
+// ─── MODAL ───────────────────────────────────────────────────────────────────
 const modal = document.getElementById('match-modal');
 const closeModalBtn = document.getElementById('close-modal');
 
-// Close modal when clicking the X or outside the modal box
 closeModalBtn.addEventListener('click', () => modal.classList.remove('open'));
-modal.addEventListener('click', e => { 
-  if (e.target === modal) modal.classList.remove('open'); 
+modal.addEventListener('click', e => {
+  if (e.target === modal) modal.classList.remove('open');
 });
 
-// Open modal when a match card is clicked
 document.getElementById('matches-output').addEventListener('click', e => {
   const card = e.target.closest('.match-card');
   if (!card) return;
@@ -392,14 +445,11 @@ document.getElementById('matches-output').addEventListener('click', e => {
   const container = document.getElementById('modal-teams-container');
   container.innerHTML = '';
 
-  // Handle TBD knockout matches where teams aren't known yet
   if (isPlaceholder(t1) && isPlaceholder(t2)) {
     container.innerHTML = '<div class="modal-team-row"><div class="modal-team-row-name" style="text-align: center; width: 100%;">Teams not yet decided</div></div>';
   } else {
-    // Generate rows for known teams
     [t1, t2].forEach(team => {
-      if (isPlaceholder(team)) return; 
-      
+      if (isPlaceholder(team)) return;
       const isFaved = favTeams.has(team);
       const row = document.createElement('div');
       row.className = `modal-team-row ${isFaved ? 'is-fav' : ''}`;
@@ -413,30 +463,22 @@ document.getElementById('matches-output').addEventListener('click', e => {
       container.appendChild(row);
     });
   }
-  
+
   modal.classList.add('open');
 });
 
-// Handle clicking the favorite buttons inside the modal
 document.getElementById('modal-teams-container').addEventListener('click', e => {
   const btn = e.target.closest('.fav-toggle');
   if (!btn) return;
-
   const team = btn.dataset.team;
-  
-  // Toggle favorite status
   if (favTeams.has(team)) {
     favTeams.delete(team);
   } else {
     favTeams.add(team);
   }
-
-  // Save and re-render background elements
   saveFavs();
   renderSidebar();
   render();
-
-  // Update the button visually inside the modal without closing it
   const isFaved = favTeams.has(team);
   btn.className = `fav-toggle ${isFaved ? 'active' : ''}`;
   btn.textContent = isFaved ? '⭐ Added' : '☆ Add to list';
@@ -453,7 +495,39 @@ function showToast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
 }
 
-// ─── AUTO REFRESH EVERY 5 MIN ─────────────────────────────────────────────────
+// ─── HAMBURGER SIDEBAR ───────────────────────────────────────────────────────
+const sidebar        = document.getElementById('sidebar');
+const hamburgerBtn   = document.getElementById('hamburger-btn');
+const sidebarClose   = document.getElementById('sidebar-close');
+const sidebarOverlay = document.getElementById('sidebar-overlay');
+
+function openSidebar() {
+  sidebar.classList.add('open');
+  sidebarOverlay.classList.add('visible');
+  hamburgerBtn.setAttribute('aria-expanded', 'true');
+  hamburgerBtn.classList.add('active');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeSidebar() {
+  sidebar.classList.remove('open');
+  sidebarOverlay.classList.remove('visible');
+  hamburgerBtn.setAttribute('aria-expanded', 'false');
+  hamburgerBtn.classList.remove('active');
+  document.body.style.overflow = '';
+}
+
+hamburgerBtn.addEventListener('click', () => {
+  sidebar.classList.contains('open') ? closeSidebar() : openSidebar();
+});
+sidebarClose.addEventListener('click', closeSidebar);
+sidebarOverlay.addEventListener('click', closeSidebar);
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeSidebar();
+});
+
+// ─── AUTO REFRESH EVERY 5 MIN ────────────────────────────────────────────────
 setInterval(fetchMatches, 5 * 60 * 1000);
 
 // ─── INIT ────────────────────────────────────────────────────────────────────
