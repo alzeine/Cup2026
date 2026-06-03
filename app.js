@@ -132,7 +132,7 @@ function getStatus(m) {
 
 function fmtDate(d) {
   return new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', {
-    weekday:'short', day:'numeric', month:'short', timeZone:'UTC'
+    weekday:'short', day:'numeric', month:'short', timeZone:'Europe/Berlin'
   });
 }
 
