@@ -311,3 +311,9 @@ main {
   /* no extra top padding that would show when label is hidden */
   padding-top: 0;
 }
+
+aside#sidebar {
+  height: 100dvh !important;
+  min-height: 100dvh !important;
+  max-height: 100dvh !important;
+}
