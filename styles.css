@@ -317,3 +317,33 @@ aside#sidebar {
   min-height: 100dvh !important;
   max-height: 100dvh !important;
 }
+
+.about-link {
+  font-family: 'Barlow', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.45);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.about-link:hover { color: rgba(255,255,255,0.9); }
+
+  /* Footer note */
+  .about-footer-note {
+    font-family: 'Barlow', sans-serif;
+    font-size: 13px;
+    font-weight: 400;
+    color: rgba(255,255,255,0.3);
+    line-height: 1.6;
+    text-align: center;
+  }
+
+  .about-footer-note a {
+    color: rgba(255,255,255,0.5);
+    text-decoration: none;
+    border-bottom: 1px solid rgba(255,255,255,0.15);
+    transition: color 0.2s;
+  }
+  .about-footer-note a:hover { color: rgba(255,255,255,0.8); }
