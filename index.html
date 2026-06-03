@@ -194,9 +194,16 @@
       <button class="btn-sm" id="btn-clear">Clear all</button>
       <button class="btn-sm primary" id="btn-my-matches">My matches</button>
     </div>
+    
     <div class="api-status loading" id="api-status">
       <span class="dot"></span><span id="api-status-text">Fetching live data…</span>
     </div>
+    
+    <div class="sidebar-search-wrap">
+      <span class="sidebar-search-icon">🔍</span>
+      <input type="text" class="sidebar-search" id="sidebar-team-search" placeholder="Search for a team...">
+    </div>
+
     <div id="team-list"></div>
   </aside>
 
@@ -222,6 +229,20 @@
     </div>
     <div id="matches-output"><div class="empty-state"><div class="big">⚽</div><h3>Loading matches…</h3><p>Fetching the latest data from openfootball.</p></div></div>
   </main>
+</div>
+
+<div class="modal-backdrop" id="match-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Match Options</div>
+        <div class="modal-subtitle">Add or remove participating teams</div>
+      </div>
+      <button class="modal-close" id="close-modal">×</button>
+    </div>
+    <div class="modal-team-rows" id="modal-teams-container">
+      </div>
+  </div>
 </div>
 
 <div class="toast" id="toast">🍪 Favourites saved</div>
@@ -517,7 +538,7 @@ function matchCard(m) {
     ? `<span class="match-badge group">${m.group}</span>`
     : `<span class="match-badge knockout">${m.round}</span>`;
 
-  return `<div class="match-card${fav?' favorite':''}">
+  return `<div class="match-card${fav?' favorite':''}" data-team1="${m.team1}" data-team2="${m.team2}" style="cursor: pointer;">
     <div class="match-meta">
       <span class="match-date">${fmtDate(m.date)}</span>
       ${badge}
@@ -703,6 +724,94 @@ document.getElementById('search-box').addEventListener('input', e => {
 });
 
 document.getElementById('refresh-btn').addEventListener('click', fetchMatches);
+
+document.getElementById('sidebar-team-search').addEventListener('input', e => {
+  const term = e.target.value.toLowerCase();
+  
+  // Filter teams
+  document.querySelectorAll('.team-btn').forEach(btn => {
+    const match = btn.dataset.team.toLowerCase().includes(term);
+    btn.style.display = match ? 'flex' : 'none';
+  });
+  
+  // Hide empty group labels if no teams match in that group
+  document.querySelectorAll('.group-label').forEach(label => {
+    const grid = label.nextElementSibling;
+    const hasVisible = Array.from(grid.children).some(b => b.style.display !== 'none');
+    label.style.display = hasVisible ? 'block' : 'none';
+  });
+});
+
+// Modal Logic
+const modal = document.getElementById('match-modal');
+const closeModalBtn = document.getElementById('close-modal');
+
+// Close modal when clicking the X or outside the modal box
+closeModalBtn.addEventListener('click', () => modal.classList.remove('open'));
+modal.addEventListener('click', e => { 
+  if (e.target === modal) modal.classList.remove('open'); 
+});
+
+// Open modal when a match card is clicked
+document.getElementById('matches-output').addEventListener('click', e => {
+  const card = e.target.closest('.match-card');
+  if (!card) return;
+
+  const t1 = card.dataset.team1;
+  const t2 = card.dataset.team2;
+  const container = document.getElementById('modal-teams-container');
+  container.innerHTML = '';
+
+  // Handle TBD knockout matches where teams aren't known yet
+  if (isPlaceholder(t1) && isPlaceholder(t2)) {
+    container.innerHTML = '<div class="modal-team-row"><div class="modal-team-row-name" style="text-align: center; width: 100%;">Teams not yet decided</div></div>';
+  } else {
+    // Generate rows for known teams
+    [t1, t2].forEach(team => {
+      if (isPlaceholder(team)) return; 
+      
+      const isFaved = favTeams.has(team);
+      const row = document.createElement('div');
+      row.className = `modal-team-row ${isFaved ? 'is-fav' : ''}`;
+      row.innerHTML = `
+        <span class="modal-team-row-flag">${flag(team)}</span>
+        <div class="modal-team-row-name">${team}</div>
+        <button class="fav-toggle ${isFaved ? 'active' : ''}" data-team="${team}">
+          ${isFaved ? '⭐ Added' : '☆ Add to list'}
+        </button>
+      `;
+      container.appendChild(row);
+    });
+  }
+  
+  modal.classList.add('open');
+});
+
+// Handle clicking the favorite buttons inside the modal
+document.getElementById('modal-teams-container').addEventListener('click', e => {
+  const btn = e.target.closest('.fav-toggle');
+  if (!btn) return;
+
+  const team = btn.dataset.team;
+  
+  // Toggle favorite status
+  if (favTeams.has(team)) {
+    favTeams.delete(team);
+  } else {
+    favTeams.add(team);
+  }
+
+  // Save and re-render background elements
+  saveFavs();
+  renderSidebar();
+  render();
+
+  // Update the button visually inside the modal without closing it
+  const isFaved = favTeams.has(team);
+  btn.className = `fav-toggle ${isFaved ? 'active' : ''}`;
+  btn.textContent = isFaved ? '⭐ Added' : '☆ Add to list';
+  btn.parentElement.className = `modal-team-row ${isFaved ? 'is-fav' : ''}`;
+});
 
 // ─── TOAST ───────────────────────────────────────────────────────────────────
 let toastTimer;
