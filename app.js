@@ -122,23 +122,26 @@ async function fetchMatches() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
 
-    allMatches = data.matches.map(m => {
-      const team1 = resolveName(m.team1);
-      const team2 = resolveName(m.team2);
+  allMatches = data.matches.map(m => {
+  const team1 = resolveName(m.team1);
+  const team2 = resolveName(m.team2);
+  const swe = toStockholm(m.date, m.time);
 
-      // Convert time + date to Stockholm
-      const swe = toStockholm(m.date, m.time);
+  // raw feed nests the final score: score.ft = [home, away]
+  const ft = m.score && m.score.ft;
 
-      return {
-        ...m,
-        team1,
-        team2,
-        // Override date and time with Stockholm equivalents
-        date: swe.date,       // may be a day later than venue local date
-        time: swe.time,       // "HH:MM" in Stockholm time
-        timeRaw: m.time       // keep original for debugging if needed
-      };
-    });
+  return {
+    ...m,
+    team1,
+    team2,
+    date: swe.date,
+    time: swe.time,
+    timeRaw: m.time,
+    score1: ft ? ft[0] : null,
+    score2: ft ? ft[1] : null
+    // goals1 / goals2 already pass through unchanged via ...m
+  };
+});
 
     // Build team→group map
     teamsGroups = {};
@@ -314,8 +317,6 @@ function matchCard(m) {
   const st  = getStatus(m);
   const fav = isFav(m);
   const ko  = isKO(m.round);
-
-  // m.time is already "HH:MM" in Stockholm time
   const t = m.time || '';
 
   let scoreHtml;
@@ -342,6 +343,16 @@ function matchCard(m) {
     ? `<span class="match-badge group">${m.group}</span>`
     : `<span class="match-badge knockout">${m.round}</span>`;
 
+  const scorers = arr => (arr || [])
+    .map(g => `<div class="goal-entry">⚽ ${g.name} <span class="goal-min">${g.minute}'</span></div>`)
+    .join('');
+  const hasGoals = (m.goals1 && m.goals1.length) || (m.goals2 && m.goals2.length);
+  const goalsHtml = hasGoals ? `
+    <div class="match-goals">
+      <div class="goals-col">${scorers(m.goals1)}</div>
+      <div class="goals-col right">${scorers(m.goals2)}</div>
+    </div>` : '';
+
   return `<div class="match-card${fav?' favorite':''}" data-team1="${m.team1}" data-team2="${m.team2}" style="cursor: pointer;">
     <div class="match-meta">
       <span class="match-date">${fmtDate(m.date)}</span>
@@ -358,6 +369,7 @@ function matchCard(m) {
         <span class="team-label">${m.team2}</span>
       </div>
     </div>
+    ${goalsHtml}
     <div class="match-footer">
       <span class="venue-info">📍 ${m.ground||'—'}</span>
       <span class="match-time">${t ? t + ' CEST' : ''}</span>

@@ -347,3 +347,15 @@ aside#sidebar {
     transition: color 0.2s;
   }
   .about-footer-note a:hover { color: rgba(255,255,255,0.8); }
+
+  .match-goals {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 14px 10px;
+  font-size: 12px;
+  color: var(--text-muted, #888);
+}
+.goals-col.right { text-align: right; }
+.goal-entry { line-height: 1.5; white-space: nowrap; }
+.goal-min { opacity: 0.7; }
